@@ -1,15 +1,19 @@
 package com.ecommerce.controllers;
 
 import com.ecommerce.dto.ApiResponse;
-import com.ecommerce.dto.OrderRequest;
-import com.ecommerce.entities.Order;
+import com.ecommerce.dto.CheckoutRequest;
+import com.ecommerce.dto.OrderResponse;
 import com.ecommerce.services.OrderService;
+
 import jakarta.validation.Valid;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
+
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
+
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,54 +25,105 @@ public class OrderController {
 
     private final OrderService orderService;
 
-    // ── POST /api/orders/place ── USER
-    // Place a new order (JWT required)
-    @PostMapping("/place")
-    public ResponseEntity<ApiResponse<Order>> placeOrder(
-            @Valid @RequestBody OrderRequest request,
-            @AuthenticationPrincipal UserDetails userDetails) {
-        Order order = orderService.placeOrder(userDetails.getUsername(), request);
-        return ResponseEntity.ok(ApiResponse.success("Order placed successfully", order));
+
+    // =====================================================
+    // CHECKOUT
+    // =====================================================
+
+    @PostMapping("/checkout")
+    public ResponseEntity<ApiResponse<OrderResponse>> checkout(
+            @Valid @RequestBody CheckoutRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+
+        OrderResponse order =
+                orderService.checkout(
+                        userDetails.getUsername(),
+                        request
+                );
+
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Order placed successfully",
+                        order
+                )
+        );
     }
 
-    // ── GET /api/orders/my-orders ── USER
-    // Get current user's orders
-    @GetMapping("/my-orders")
-    public ResponseEntity<ApiResponse<List<Order>>> getMyOrders(
-            @AuthenticationPrincipal UserDetails userDetails) {
-        List<Order> orders = orderService.getUserOrders(userDetails.getUsername());
-        return ResponseEntity.ok(ApiResponse.success("Your orders", orders));
+
+    // =====================================================
+    // GET MY ORDERS
+    // =====================================================
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<OrderResponse>>> getMyOrders(
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+
+        List<OrderResponse> orders =
+                orderService.getMyOrders(
+                        userDetails.getUsername()
+                );
+
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Orders fetched successfully",
+                        orders
+                )
+        );
     }
 
-    // ── GET /api/orders/{id} ── USER/ADMIN
+
+    // =====================================================
+    // GET ORDER DETAILS
+    // =====================================================
+
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<Order>> getOrderById(@PathVariable Long id) {
-        return ResponseEntity.ok(ApiResponse.success("Order details", orderService.getOrderById(id)));
+    public ResponseEntity<ApiResponse<OrderResponse>> getOrder(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+
+        OrderResponse order =
+                orderService.getOrderById(
+                        userDetails.getUsername(),
+                        id
+                );
+
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Order fetched successfully",
+                        order
+                )
+        );
     }
 
-    // ── PUT /api/orders/cancel/{id} ── USER
+
+    // =====================================================
+    // CANCEL ORDER
+    // =====================================================
+
     @PutMapping("/cancel/{id}")
-    public ResponseEntity<ApiResponse<Order>> cancelOrder(
+    public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(
             @PathVariable Long id,
-            @AuthenticationPrincipal UserDetails userDetails) {
-        Order order = orderService.cancelOrder(id, userDetails.getUsername());
-        return ResponseEntity.ok(ApiResponse.success("Order cancelled", order));
-    }
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
 
-    // ── GET /api/orders/admin/all ── ADMIN ONLY
-    @GetMapping("/admin/all")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<List<Order>>> getAllOrders() {
-        return ResponseEntity.ok(ApiResponse.success("All orders", orderService.getAllOrders()));
-    }
+        OrderResponse order =
+                orderService.cancelOrder(
+                        userDetails.getUsername(),
+                        id
+                );
 
-    // ── PUT /api/orders/admin/status/{id} ── ADMIN ONLY
-    @PutMapping("/admin/status/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<Order>> updateOrderStatus(
-            @PathVariable Long id,
-            @RequestParam String status) {
-        Order order = orderService.updateOrderStatus(id, status);
-        return ResponseEntity.ok(ApiResponse.success("Order status updated", order));
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        "Order cancelled successfully",
+                        order
+                )
+        );
     }
 }

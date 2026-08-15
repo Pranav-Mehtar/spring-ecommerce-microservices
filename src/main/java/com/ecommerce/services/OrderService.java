@@ -1,122 +1,352 @@
 package com.ecommerce.services;
 
-import com.ecommerce.dto.OrderRequest;
-import com.ecommerce.entities.*;
+import com.ecommerce.dto.CheckoutRequest;
+import com.ecommerce.dto.OrderItemResponse;
+import com.ecommerce.dto.OrderResponse;
+import com.ecommerce.entities.Cart;
+import com.ecommerce.entities.CartItem;
+import com.ecommerce.entities.Order;
+import com.ecommerce.entities.OrderItem;
+import com.ecommerce.entities.User;
+import com.ecommerce.repositories.CartRepository;
 import com.ecommerce.repositories.OrderRepository;
-import com.ecommerce.repositories.ProductRepository;
 import com.ecommerce.repositories.UserRepository;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class OrderService {
 
     private final OrderRepository orderRepository;
-    private final ProductRepository productRepository;
+    private final CartRepository cartRepository;
     private final UserRepository userRepository;
 
-    // ── Place a new order ──
+
+    // =====================================================
+    // CHECKOUT
+    // =====================================================
+
     @Transactional
-    public Order placeOrder(String userEmail, OrderRequest request) {
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+    public OrderResponse checkout(
+            String userEmail,
+            CheckoutRequest request
+    ) {
 
-        List<OrderItem> orderItems = new ArrayList<>();
-        double totalAmount = 0.0;
+        User user =
+                userRepository
+                        .findByEmail(userEmail)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "User not found"
+                                )
+                        );
 
-        // Build order items and calculate total
-        for (OrderRequest.OrderItemRequest itemReq : request.getItems()) {
-            Product product = productRepository.findById(itemReq.getProductId())
-                    .orElseThrow(() -> new RuntimeException("Product not found: " + itemReq.getProductId()));
 
-            // Check stock
-            if (product.getStock() < itemReq.getQuantity()) {
-                throw new RuntimeException("Insufficient stock for product: " + product.getName());
-            }
+        // -------------------------------------------------
+        // Get cart
+        // -------------------------------------------------
 
-            // Deduct stock
-            product.setStock(product.getStock() - itemReq.getQuantity());
-            productRepository.save(product);
+        Cart cart =
+                cartRepository
+                        .findByUser(user)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Cart not found"
+                                )
+                        );
 
-            OrderItem item = OrderItem.builder()
-                    .product(product)
-                    .quantity(itemReq.getQuantity())
-                    .priceAtPurchase(product.getPrice())
-                    .build();
 
-            orderItems.add(item);
-            totalAmount += product.getPrice() * itemReq.getQuantity();
+        // -------------------------------------------------
+        // Check cart
+        // -------------------------------------------------
+
+        if (cart.getItems() == null ||
+                cart.getItems().isEmpty()) {
+
+            throw new RuntimeException(
+                    "Cart is empty"
+            );
         }
 
-        // Build and save order
-        Order order = Order.builder()
-                .user(user)
-                .totalAmount(totalAmount)
-                .shippingAddress(request.getShippingAddress())
-                .build();
 
-        order = orderRepository.save(order);
+        // -------------------------------------------------
+        // Calculate total
+        // -------------------------------------------------
 
-        // Link items to order
-        for (OrderItem item : orderItems) {
-            item.setOrder(order);
-        }
+        double totalAmount =
+                cart.getItems()
+                        .stream()
+                        .mapToDouble(
+                                item ->
+                                        item.getProduct().getPrice()
+                                                * item.getQuantity()
+                        )
+                        .sum();
+
+
+        // -------------------------------------------------
+        // Create order
+        // -------------------------------------------------
+
+        Order order =
+                Order.builder()
+                        .user(user)
+                        .totalAmount(totalAmount)
+                        .status("CONFIRMED")
+                        .shippingAddress(
+                                request.getShippingAddress()
+                        )
+                        .build();
+
+
+        // -------------------------------------------------
+        // Create order items
+        // -------------------------------------------------
+
+        List<OrderItem> orderItems =
+                cart.getItems()
+                        .stream()
+                        .map(cartItem -> {
+
+                            OrderItem orderItem =
+                                    OrderItem.builder()
+                                            .order(order)
+                                            .product(
+                                                    cartItem.getProduct()
+                                            )
+                                            .quantity(
+                                                    cartItem.getQuantity()
+                                            )
+                                            .priceAtPurchase(
+                                                    cartItem
+                                                            .getProduct()
+                                                            .getPrice()
+                                            )
+                                            .build();
+
+                            return orderItem;
+                        })
+                        .collect(Collectors.toList());
+
+
         order.setItems(orderItems);
 
-        return orderRepository.save(order);
+
+        // -------------------------------------------------
+        // Save order
+        // -------------------------------------------------
+
+        Order savedOrder =
+                orderRepository.save(order);
+
+
+        // -------------------------------------------------
+        // Clear cart
+        // -------------------------------------------------
+
+        cart.getItems().clear();
+
+        cartRepository.save(cart);
+
+
+        // -------------------------------------------------
+        // Return response
+        // -------------------------------------------------
+
+        return mapToResponse(savedOrder);
     }
 
-    // ── Get orders for a specific user ──
-    public List<Order> getUserOrders(String userEmail) {
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        return orderRepository.findByUser(user);
+
+    // =====================================================
+    // GET MY ORDERS
+    // =====================================================
+
+    @Transactional(readOnly = true)
+    public List<OrderResponse> getMyOrders(
+            String userEmail
+    ) {
+
+        User user =
+                userRepository
+                        .findByEmail(userEmail)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "User not found"
+                                )
+                        );
+
+
+        List<Order> orders =
+                orderRepository.findByUser(user);
+
+
+        return orders
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
-    // ── Get single order ──
-    public Order getOrderById(Long orderId) {
-        return orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Order not found: " + orderId));
-    }
 
-    // ── Get all orders (ADMIN only) ──
-    public List<Order> getAllOrders() {
-        return orderRepository.findAll();
-    }
+    // =====================================================
+    // GET ORDER DETAILS
+    // =====================================================
 
-    // ── Update order status (ADMIN only) ──
-    public Order updateOrderStatus(Long orderId, String status) {
-        Order order = getOrderById(orderId);
-        order.setStatus(status);
-        return orderRepository.save(order);
-    }
+    @Transactional(readOnly = true)
+    public OrderResponse getOrderById(
+            String userEmail,
+            Long orderId
+    ) {
 
-    // ── Cancel order ──
-    public Order cancelOrder(Long orderId, String userEmail) {
-        Order order = getOrderById(orderId);
+        User user =
+                userRepository
+                        .findByEmail(userEmail)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "User not found"
+                                )
+                        );
 
-        // Verify the order belongs to this user
-        if (!order.getUser().getEmail().equals(userEmail)) {
-            throw new RuntimeException("Unauthorized to cancel this order");
+
+        Order order =
+                orderRepository
+                        .findById(orderId)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Order not found"
+                                )
+                        );
+
+
+        // Security check
+        if (!order.getUser().getId()
+                .equals(user.getId())) {
+
+            throw new RuntimeException(
+                    "You are not authorized to view this order"
+            );
         }
 
-        if (order.getStatus().equals("SHIPPED") || order.getStatus().equals("DELIVERED")) {
-            throw new RuntimeException("Cannot cancel order that is already " + order.getStatus());
+
+        return mapToResponse(order);
+    }
+
+
+    // =====================================================
+    // CANCEL ORDER
+    // =====================================================
+
+    @Transactional
+    public OrderResponse cancelOrder(
+            String userEmail,
+            Long orderId
+    ) {
+
+        User user =
+                userRepository
+                        .findByEmail(userEmail)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "User not found"
+                                )
+                        );
+
+
+        Order order =
+                orderRepository
+                        .findById(orderId)
+                        .orElseThrow(
+                                () -> new RuntimeException(
+                                        "Order not found"
+                                )
+                        );
+
+
+        // Security check
+        if (!order.getUser().getId()
+                .equals(user.getId())) {
+
+            throw new RuntimeException(
+                    "You are not authorized to cancel this order"
+            );
         }
 
-        // Restore stock
-        for (OrderItem item : order.getItems()) {
-            Product product = item.getProduct();
-            product.setStock(product.getStock() + item.getQuantity());
-            productRepository.save(product);
+
+        // Cannot cancel completed orders
+        if ("SHIPPED".equals(order.getStatus())
+                || "DELIVERED".equals(order.getStatus())
+                || "CANCELLED".equals(order.getStatus())) {
+
+            throw new RuntimeException(
+                    "Order cannot be cancelled"
+            );
         }
+
 
         order.setStatus("CANCELLED");
-        return orderRepository.save(order);
+
+
+        Order savedOrder =
+                orderRepository.save(order);
+
+
+        return mapToResponse(savedOrder);
+    }
+
+
+    // =====================================================
+    // ENTITY → RESPONSE
+    // =====================================================
+
+    private OrderResponse mapToResponse(
+            Order order
+    ) {
+
+        List<OrderItemResponse> items =
+                order.getItems()
+                        .stream()
+                        .map(item -> {
+
+                            double subtotal =
+                                    item.getPriceAtPurchase()
+                                            * item.getQuantity();
+
+
+                            return OrderItemResponse.builder()
+                                    .id(item.getId())
+                                    .productId(
+                                            item.getProduct().getId()
+                                    )
+                                    .productName(
+                                            item.getProduct().getName()
+                                    )
+                                    .quantity(
+                                            item.getQuantity()
+                                    )
+                                    .priceAtPurchase(
+                                            item.getPriceAtPurchase()
+                                    )
+                                    .subtotal(subtotal)
+                                    .build();
+                        })
+                        .collect(Collectors.toList());
+
+
+        return OrderResponse.builder()
+                .id(order.getId())
+                .totalAmount(order.getTotalAmount())
+                .status(order.getStatus())
+                .createdAt(order.getCreatedAt())
+                .shippingAddress(
+                        order.getShippingAddress()
+                )
+                .items(items)
+                .build();
     }
 }

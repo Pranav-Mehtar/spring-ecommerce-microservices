@@ -9,17 +9,17 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AuthResponse {
+public class CartItemResponse {
 
-    private String token;
+    private Long id;
 
-    private String refreshToken;
+    private Long productId;
 
-    private String email;
+    private String productName;
 
-    private String fullName;
+    private Double price;
 
-    private String role;
+    private Integer quantity;
 
-    private String message;
+    private Double subtotal;
 }

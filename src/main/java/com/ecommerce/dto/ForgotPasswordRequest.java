@@ -1,5 +1,7 @@
 package com.ecommerce.dto;
 
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -9,17 +11,9 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class AuthResponse {
+public class ForgotPasswordRequest {
 
-    private String token;
-
-    private String refreshToken;
-
+    @NotBlank(message = "Email is required")
+    @Email(message = "Invalid email")
     private String email;
-
-    private String fullName;
-
-    private String role;
-
-    private String message;
 }
