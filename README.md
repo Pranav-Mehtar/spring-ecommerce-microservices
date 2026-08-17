@@ -11,3 +11,5 @@ role-based access control, and REST APIs.
 - JWT
 - MySQL
 - JPA/Hibernate
+- React.Js
+- Spring AI
